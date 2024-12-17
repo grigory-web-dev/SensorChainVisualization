@@ -1,36 +1,110 @@
 import * as THREE from 'three';
+import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 
 export class PlatesManager {
-    constructor(scene3D) {  // Изменяем параметр на scene3D
-        this.scene3D = scene3D;  // Сохраняем ссылку на весь объект Scene3D
+    constructor(scene3D) {
+        this.scene3D = scene3D;
         this.scene = scene3D.scene;
-        this.worldCenter = scene3D.worldCenter;  // Получаем центр координат
+        this.worldCenter = scene3D.worldCenter;
         this.plates = [];
-        this.initPlates();
-    }
 
+        // Создаем эффект контура
+        this.outlineEffect = new OutlineEffect(this.scene3D.renderer, {
+            defaultThickness: 0.002,         // Немного уменьшим толщину
+            defaultColor: new THREE.Color(0xff0000),  // Тёмно-серый цвет
+            defaultAlpha: 0.8,               // Немного прозрачности
+            defaultKeepAlive: true,
+            blur: true,                      // Включаем размытие
+            blurSize: 2,                     // Размер размытия
+            edgeStrength: 2.0                // Сила эффекта
+        });
+
+        // console.log('Before initPlates');
+        this.initPlates();
+        // console.log('After initPlates, plates array:', this.plates);
+
+        // Заменяем стандартный рендеринг на рендеринг с контуром
+        this.scene3D.render = () => {
+            this.outlineEffect.render(this.scene, this.scene3D.camera);
+        };
+
+    }
     initPlates() {
         for (let i = 0; i < 5; i++) {
             const plateGeometry = new THREE.BoxGeometry(2, 0.05, 1);
-            const plateMaterial = new THREE.MeshStandardMaterial({
-                color: 0x44ff44,
-                metalness: 0.5,
-                roughness: 0.5
+
+            // Создаем две разные текстуры для верхней и нижней грани
+            const topCanvas = document.createElement('canvas');
+            const bottomCanvas = document.createElement('canvas');
+            [topCanvas, bottomCanvas].forEach(canvas => {
+                canvas.width = 256;
+                canvas.height = 128;
+                const context = canvas.getContext('2d');
+
+                // Очищаем канвас
+                context.fillStyle = '#44ff44';
+                context.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Сохраняем состояние контекста
+                context.save();
+
+                // Настраиваем текст
+                context.fillStyle = 'black';
+                context.font = 'bold 64px Arial';
+                context.textAlign = 'center';
+                context.textBaseline = 'middle';
+
+                // Для верхней грани поворачиваем влево, для нижней - вправо
+                if (canvas === topCanvas) {
+                    context.translate(canvas.width / 2, canvas.height / 2);
+                    context.rotate(-Math.PI / 2);
+                    context.fillText((i + 1).toString(), 0, 0);
+                } else {
+                    context.translate(canvas.width / 2, canvas.height / 2);
+                    context.rotate(-Math.PI / 2);
+                    context.fillText((i + 1).toString(), 0, 0);
+                }
+
+                context.restore();
             });
-            const plate = new THREE.Mesh(plateGeometry, plateMaterial);
+
+            const topTexture = new THREE.CanvasTexture(topCanvas);
+            const bottomTexture = new THREE.CanvasTexture(bottomCanvas);
+
+            // Создаем материалы
+            const materials = [
+                // right
+                new THREE.MeshPhongMaterial({ color: 0x44ff44, shininess: 50, specular: 0x444444 }),
+                // left
+                new THREE.MeshPhongMaterial({ color: 0x44ff44, shininess: 50, specular: 0x444444 }),
+                // top
+                new THREE.MeshPhongMaterial({ color: 0x44ff44, shininess: 50, specular: 0x444444, map: topTexture }),
+                // bottom
+                new THREE.MeshPhongMaterial({ color: 0x44ff44, shininess: 50, specular: 0x444444, map: bottomTexture }),
+                // front
+                new THREE.MeshPhongMaterial({ color: 0x44ff44, shininess: 50, specular: 0x444444 }),
+                // back
+                new THREE.MeshPhongMaterial({ color: 0x44ff44, shininess: 50, specular: 0x444444 })
+            ];
+
+            const plate = new THREE.Mesh(plateGeometry, materials);
             plate.castShadow = true;
             plate.receiveShadow = true;
 
-            // Устанавливаем начальную позицию относительно центра координат
+            // Добавляем контуры
+            const edges = new THREE.EdgesGeometry(plateGeometry);
+            const edgesMaterial = new THREE.LineBasicMaterial({
+                color: 0x000000,
+                linewidth: 1
+            });
+            const edgesMesh = new THREE.LineSegments(edges, edgesMaterial);
+            plate.add(edgesMesh);
+
             plate.position.set(
                 this.worldCenter.x,
-                this.worldCenter.y + (i + 1) * 0.5,  // Располагаем пластины друг над другом
+                this.worldCenter.y + (i + 1) * 0.5,
                 this.worldCenter.z
             );
-
-            // Add plate number
-            const label = this.createPlateLabel(i + 1);
-            plate.add(label);
 
             this.scene.add(plate);
             this.plates.push(plate);
