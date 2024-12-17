@@ -1,0 +1,36 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    background-color: #f0f0f0;
+}
+
+h1 {
+    color: #333;
+    text-align: center;
+}
+
+#status {
+    text-align: center;
+    margin: 10px;
+    padding: 5px;
+    color: #666;
+}
+
+#simulation {
+    display: block;
+    margin: 0 auto;
+    background-color: white;
+    border: 1px solid #ccc;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.plate {
+    stroke: #2c3e50;
+    stroke-width: 3;
+}
+
+.ground {
+    stroke: #34495e;
+    stroke-width: 2;
+}
