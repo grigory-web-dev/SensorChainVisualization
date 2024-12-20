@@ -2,7 +2,7 @@
 import numpy as np
 from typing import List
 from src.models import SimPlate
-from src.config import SimConfig
+from src.config import ServerConfig
 
 def distance_between_points(point1, point2):
     """Вычисляет расстояние между двумя точками"""
@@ -80,7 +80,7 @@ def check_floor_collision(plate: SimPlate) -> bool:
     """Проверяет столкновение платы с полом"""
     return min(plate.start_point[1], plate.end_point[1]) < 0
 
-def is_valid_state(plates: List[SimPlate], config: SimConfig) -> bool:
+def is_valid_state(plates: List[SimPlate], config: ServerConfig) -> bool:
     """Проверяет валидность состояния всей системы"""
     # Проверяем столкновения с полом
     if any(check_floor_collision(plate) for plate in plates):

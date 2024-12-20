@@ -1,23 +1,29 @@
-# src/config.py
 from dataclasses import dataclass
 
 @dataclass
-class SimConfig:
-    # Физические ограничения
-    MAX_VERTICAL_ANGLE: float = 30.0  # максимальный угол отклонения от вертикали
-    MIN_VERTICAL_ANGLE: float = -30.0  # минимальный угол отклонения от вертикали
-    
-    # Геометрические параметры
-    BASE_LENGTH: float = 200.0  # высота платы в мм
-    WIDTH_RATIO: float = 0.6    # для визуализации: отношение ширины к высоте
-    THICKNESS_RATIO: float = 0.1 # для визуализации: отношение толщины к высоте
-    
-    # Параметры симуляции
-    UPDATE_RATE: float = 1/1  # 60 FPS
-    NUM_PLATES: int = 4        # Количество пластин
-
-@dataclass
 class ServerConfig:
+    # Server settings
     HOST: str = "localhost"
     PORT: int = 8000
     RELOAD: bool = True
+    
+    # IMU simulation parameters
+    UPDATE_RATE: float = 100.0  # Hz
+    UPDATE_INTERVAL: float = 1.0 / UPDATE_RATE
+    
+    # Visualization parameters
+    NUM_PLATES: int = 5
+    BASE_LENGTH: float = 100.0  # mm
+    
+    # Calibration settings
+    RECALIBRATION_TIMEOUT: float = 30.0  # seconds until recalibration needed
+    CALIBRATION_SAMPLES: int = 50  # number of samples needed for calibration
+    MIN_CONFIDENCE: float = 0.2  # minimum confidence in position
+    CONFIDENCE_DECAY: float = 0.01  # how fast confidence decreases per second
+    
+    # IMU noise parameters
+    ACCEL_NOISE: float = 0.1  # m/s²
+    GYRO_NOISE: float = 0.01  # rad/s
+    
+    # Debug options
+    SAVE_RAW_DATA: bool = True
