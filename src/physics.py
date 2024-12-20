@@ -1,98 +1,94 @@
-# physics.py
+# src/physics.py
 import numpy as np
-from typing import List, Tuple
+from typing import List
+from src.models import SimPlate
 from src.config import SimConfig
-from src.models import Plate
 
-def rotate_point(point: Tuple[float, float, float], 
-                angles: Tuple[float, float, float]) -> Tuple[float, float, float]:
-    """Поворот точки вокруг начала координат"""
-    x, y, z = point
-    rx, ry, rz = angles
-    
-    # Rotation matrices
-    Rx = np.array([
-        [1, 0, 0],
-        [0, np.cos(rx), -np.sin(rx)],
-        [0, np.sin(rx), np.cos(rx)]
-    ])
-    
-    Ry = np.array([
-        [np.cos(ry), 0, np.sin(ry)],
-        [0, 1, 0],
-        [-np.sin(ry), 0, np.cos(ry)]
-    ])
-    
-    Rz = np.array([
-        [np.cos(rz), -np.sin(rz), 0],
-        [np.sin(rz), np.cos(rz), 0],
-        [0, 0, 1]
-    ])
-    
-    point = np.array([x, y, z])
-    return tuple(Rz @ Ry @ Rx @ point)
+def distance_between_points(point1, point2):
+    """Вычисляет расстояние между двумя точками"""
+    return np.sqrt(sum((p1 - p2) ** 2 for p1, p2 in zip(point1, point2)))
 
-def get_plate_corners(plate: Plate) -> List[Tuple[float, float, float]]:
-    """Получение координат углов пластины"""
-    w2 = plate.width / 2
-    l2 = plate.length / 2
-    
-    # Base corners relative to center
-    corners = [
-        (-w2, 0, -l2),
-        (w2, 0, -l2),
-        (w2, 0, l2),
-        (-w2, 0, l2)
-    ]
-    
-    # Rotate corners
-    rotated = [rotate_point(c, plate.angles) for c in corners]
-    
-    # Translate to plate position
-    return [(x + plate.center[0], 
-            y + plate.center[1], 
-            z + plate.center[2]) for x, y, z in rotated]
+def distance_between_line_segments(start1, end1, start2, end2):
+    """Вычисляет минимальное расстояние между двумя отрезками"""
+    def dot_product(v1, v2):
+        return sum(a * b for a, b in zip(v1, v2))
 
-def check_plate_collision(plate1: Plate, plate2: Plate) -> bool:
-    """Проверка столкновения двух пластин"""
-    # Get corners of both plates
-    corners1 = get_plate_corners(plate1)
-    corners2 = get_plate_corners(plate2)
-    
-    # Separating Axis Theorem (SAT) implementation
-    # This is a simplified version - in real implementation 
-    # we need to check all possible axes
-    
-    # Check if any point of plate2 is below plate1
-    normal1 = np.array([0, 1, 0])  # Simplified - using up vector
-    normal1 = rotate_point(normal1, plate1.angles)
-    
-    center_diff = np.array(plate2.center) - np.array(plate1.center)
-    if abs(np.dot(center_diff, normal1)) < (plate1.width + plate2.width) * 0.5:
-        return True
-        
-    return False
+    def subtract_points(p1, p2):
+        return tuple(a - b for a, b in zip(p1, p2))
 
-def check_table_collision(plate: Plate) -> bool:
-    """Проверка столкновения пластины со столом"""
-    corners = get_plate_corners(plate)
-    return any(z < 0 for x, y, z in corners)
+    def add_points(p1, p2):
+        return tuple(a + b for a, b in zip(p1, p2))
 
-def is_valid_state(plates: List[Plate], config: SimConfig) -> bool:
-    """Проверка валидности состояния системы"""
-    # Check collisions with table
-    if any(check_table_collision(plate) for plate in plates):
-        return False
-    
-    # Check minimum angles
-    for plate in plates:
-        if any(abs(angle) < config.MIN_ANGLE for angle in plate.angles):
-            return False
-            
-    # Check collisions between plates
+    def multiply_point(p, scalar):
+        return tuple(a * scalar for a in p)
+
+    # Векторы направления
+    d1 = subtract_points(end1, start1)
+    d2 = subtract_points(end2, start2)
+    r = subtract_points(start1, start2)
+
+    a = dot_product(d1, d1)
+    e = dot_product(d2, d2)
+    f = dot_product(d2, r)
+
+    if a <= 1e-8 and e <= 1e-8:  # Оба отрезка являются точками
+        return distance_between_points(start1, start2)
+
+    if a <= 1e-8:  # Первый отрезок является точкой
+        s = np.clip(f / e, 0.0, 1.0)
+        return distance_between_points(start1, add_points(start2, multiply_point(d2, s)))
+
+    c = dot_product(d1, r)
+    if e <= 1e-8:  # Второй отрезок является точкой
+        t = np.clip(-c / a, 0.0, 1.0)
+        return distance_between_points(add_points(start1, multiply_point(d1, t)), start2)
+
+    b = dot_product(d1, d2)
+    denom = a * e - b * b
+    if denom != 0:
+        s = np.clip((b * c - a * f) / denom, 0.0, 1.0)
+    else:
+        s = 0.0
+
+    t = (b * s + c) / a
+    if t < 0:
+        t = 0
+        s = np.clip(-f / e, 0.0, 1.0)
+    elif t > 1:
+        t = 1
+        s = np.clip((b - f) / e, 0.0, 1.0)
+
+    point1 = add_points(start1, multiply_point(d1, t))
+    point2 = add_points(start2, multiply_point(d2, s))
+
+    return distance_between_points(point1, point2)
+
+def check_plate_collisions(plates: List[SimPlate], min_distance: float = 10.0) -> bool:
+    """Проверяет столкновения между платами"""
     for i in range(len(plates)):
         for j in range(i + 1, len(plates)):
-            if check_plate_collision(plates[i], plates[j]):
-                return False
+            if distance_between_line_segments(
+                plates[i].start_point, 
+                plates[i].end_point,
+                plates[j].start_point, 
+                plates[j].end_point
+            ) < min_distance:
+                return True
+    return False
+
+def check_floor_collision(plate: SimPlate) -> bool:
+    """Проверяет столкновение платы с полом"""
+    return min(plate.start_point[1], plate.end_point[1]) < 0
+
+def is_valid_state(plates: List[SimPlate], config: SimConfig) -> bool:
+    """Проверяет валидность состояния всей системы"""
+    # Проверяем столкновения с полом
+    if any(check_floor_collision(plate) for plate in plates):
+        return False
     
+    # Проверяем углы наклона (отклонение от вертикали)
+    for plate in plates:
+        if not (90 + config.MIN_VERTICAL_ANGLE <= plate.vertical_angle <= 90 + config.MAX_VERTICAL_ANGLE):
+            return False
+            
     return True

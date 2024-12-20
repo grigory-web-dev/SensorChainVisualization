@@ -4,38 +4,45 @@ from typing import List, Tuple
 from datetime import datetime
 
 @dataclass
-class Plate:
-    center: Tuple[float, float, float]  # x, y, z coordinates
-    angles: Tuple[float, float, float]  # rotation around x, y, z axes
-    width: float
-    length: float
+class SimPlate:
+    """Plate model for physical simulation"""
+    height: float
+    rotation_angle: float  # horizontal rotation
+    vertical_angle: float  # vertical tilt from vertical line
+    start_point: Tuple[float, float, float]
+    end_point: Tuple[float, float, float]
+    index: int
+
+@dataclass
+class VisPlate:
+    """Plate model for visualization"""
+    height: float
+    start_point: Tuple[float, float, float]
+    end_point: Tuple[float, float, float]
+    angles: Tuple[float, float, float]
     index: int
 
     def to_dict(self):
         return {
-            "center": [float(x) for x in self.center],
+            "start_point": [float(x) for x in self.start_point],
+            "end_point": [float(x) for x in self.end_point],
             "angles": [float(x) for x in self.angles],
-            "width": float(self.width),
-            "length": float(self.length),
+            "height": float(self.height),
             "index": self.index
         }
 
 @dataclass
 class SystemState:
     timestamp: datetime
-    plates: List[Plate]
-    plate_base_length: float    
-    plate_width: float
-
-    
+    plates: List[VisPlate]
+    plate_base_height: float
 
     def to_dict(self):
         if not isinstance(self.timestamp, datetime):
-            raise TypeError(f"Некорректный тип timestamp: {type(self.timestamp)}. Ожидается datetime. datetime: {datetime}")
+            raise TypeError(f"Incorrect timestamp type: {type(self.timestamp)}. Expected datetime.")
         return {
             "timestamp": self.timestamp.isoformat(),
             "plates": [plate.to_dict() for plate in self.plates],
-            "plate_base_length": float(self.plate_base_length),
-            "plate_width": float(self.plate_width),
+            "plate_base_height": float(self.plate_base_height),
             "version": "1.0"
         }

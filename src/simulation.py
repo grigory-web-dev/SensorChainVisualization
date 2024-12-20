@@ -1,148 +1,139 @@
 # src/simulation.py
 import numpy as np
 from datetime import datetime
-from src.models import Plate, SystemState
-from src.physics import is_valid_state, rotate_point
+from src.models import SimPlate, VisPlate, SystemState
+from src.physics import is_valid_state
 from src.config import SimConfig
 from src.logger import server_logger
 
 class PlatesSimulation:
     def __init__(self, config: SimConfig):
         self.config = config
-        self.plates = []
-        self.velocities = []
+        self.sim_plates = []  # для физических расчетов
+        self.vis_plates = []  # для визуализации
         self.initialize_plates()
 
-    def get_plate_ends(self, plate):
-        """Вычисляет координаты концов платы"""
-        angle = plate.angles[0]
-        half_length = plate.length / 2
-        
-        # Ближний конец (точка крепления к предыдущей плате)
-        near_end = (
-            plate.center[0],
-            plate.center[1] - np.sin(angle) * half_length,
-            plate.center[2] - np.cos(angle) * half_length
-        )
-        
-        # Дальний конец (точка крепления следующей платы)
-        far_end = (
-            plate.center[0],
-            plate.center[1] + np.sin(angle) * half_length,
-            plate.center[2] + np.cos(angle) * half_length
-        )
-        
-        return near_end, far_end
-
-    def get_plate_center_from_hinge(self, hinge_point, angle, length):
-        """Вычисляет центр платы по точке крепления"""
-        half_length = length / 2
-        return (
-            0.0,  # x всегда 0
-            hinge_point[1] + np.sin(angle) * half_length,  # y
-            hinge_point[2] + np.cos(angle) * half_length   # z
-        )
-
     def initialize_plates(self):
-        self.plates = []
-        self.velocities = []
-        plate_length = self.config.BASE_LENGTH
-        plate_width = self.config.BASE_LENGTH * self.config.WIDTH_RATIO
-
-        # Первая плата - её точка крепления в (0,0,0)
-        first_center = self.get_plate_center_from_hinge(
-            (0.0, 0.0, 0.0),
-            self.config.MIN_ANGLE,
-            plate_length
-        )
+        """Инициализация цепочки плат"""
+        self.sim_plates = []
+        self.vis_plates = []
+        height = float(self.config.BASE_LENGTH)  # высота в мм
         
-        first_plate = Plate(
-            center=first_center,
-            angles=(self.config.MIN_ANGLE, 0.0, 0.0),
-            width=plate_width,
-            length=plate_length,
-            index=0
-        )
-        self.plates.append(first_plate)
-        self.velocities.append(np.zeros(3))
+        # Первая плата начинается в начале координат
+        for i in range(self.config.NUM_PLATES):
+            if i == 0:
+                # Первая плата
+                start_point = (0.0, 0.0, 0.0)
+                rotation_angle = 0.0
+                vertical_angle = 0.0  # изначально вертикально
+            else:
+                # Последующие платы начинаются от конца предыдущей
+                start_point = self.sim_plates[i-1].end_point
+                rotation_angle = self.sim_plates[i-1].rotation_angle
+                vertical_angle = 0.0  # изначально вертикально
 
-        # Добавляем остальные платы
-        for i in range(1, self.config.NUM_PLATES):
-            prev_plate = self.plates[i-1]
-            _, prev_far_end = self.get_plate_ends(prev_plate)
-            
-            # Центр новой платы относительно точки крепления
-            new_center = self.get_plate_center_from_hinge(
-                prev_far_end,  # Крепим к дальнему концу предыдущей
-                self.config.MIN_ANGLE,
-                plate_length
+            # Вычисляем end_point как смещение вверх на height
+            end_point = (
+                start_point[0],
+                start_point[1] + height,
+                start_point[2]
             )
 
-            new_plate = Plate(
-                center=new_center,
-                angles=(self.config.MIN_ANGLE, 0.0, 0.0),
-                width=plate_width,
-                length=plate_length,
+            angles = (0.0, 0.0, 0.0)  # начальные углы
+
+            # Создаем плату для симуляции
+            sim_plate = SimPlate(
+                height=height,
+                rotation_angle=rotation_angle,
+                vertical_angle=vertical_angle,
+                start_point=start_point,
+                end_point=end_point,
                 index=i
             )
-            self.plates.append(new_plate)
-            self.velocities.append(np.zeros(3))
+            self.sim_plates.append(sim_plate)
 
-    def update_plate_positions(self):
-        """Обновляет позиции всех плат, сохраняя точки крепления"""
-        # Первая плата вращается вокруг (0,0,0)
-        self.plates[0].center = self.get_plate_center_from_hinge(
-            (0.0, 0.0, 0.0),
-            self.plates[0].angles[0],
-            self.plates[0].length
-        )
-        
-        # Обновляем остальные платы
-        for i in range(1, len(self.plates)):
-            prev_plate = self.plates[i-1]
-            curr_plate = self.plates[i]
-            
-            # Получаем точку крепления (дальний конец предыдущей платы)
-            _, hinge_point = self.get_plate_ends(prev_plate)
-            
-            # Обновляем центр текущей платы
-            curr_plate.center = self.get_plate_center_from_hinge(
-                hinge_point,
-                curr_plate.angles[0],
-                curr_plate.length
+            # Создаем плату для визуализации
+            vis_plate = VisPlate(
+                height=height,
+                start_point=start_point,
+                end_point=end_point,
+                angles=angles,
+                index=i
             )
+            self.vis_plates.append(vis_plate)
+
+            server_logger.debug(f"Initialized plate {i}:")
+            server_logger.debug(f"  start: {start_point}")
+            server_logger.debug(f"  end: {end_point}")
+            server_logger.debug(f"  angles: {angles}")
 
     def update(self):
-        # Обновляем углы всех плат
-        for i in range(len(self.plates)):
-            acceleration = np.zeros(3)
-            acceleration[0] = np.random.uniform(-self.config.ANGLE_STEP, self.config.ANGLE_STEP)
-            
-            self.velocities[i][0] *= self.config.DAMPING
-            self.velocities[i][0] += acceleration[0]
-            
-            new_angle = np.clip(
-                self.plates[i].angles[0] + self.velocities[i][0],
-                self.config.MIN_ANGLE,
-                self.config.MAX_ANGLE
-            )
-            
-            self.plates[i].angles = (new_angle, 0.0, 0.0)
+        """Обновление состояния всей цепочки"""
+        for i in range(len(self.sim_plates)):
+            if i == 0:
+                # Первая плата только наклоняется вперед/назад
+                vertical_angle = np.random.uniform(-15, 15)  # отклонение от вертикали
+                current_plate = self.sim_plates[i]
+                
+                # Вычисляем новую конечную точку
+                angle_rad = np.radians(vertical_angle)
+                end_point = (
+                    current_plate.start_point[0],
+                    current_plate.start_point[1] + current_plate.height * np.cos(angle_rad),
+                    current_plate.start_point[2] + current_plate.height * np.sin(angle_rad)
+                )
+                
+                # Обновляем данные
+                current_plate.end_point = end_point
+                current_plate.vertical_angle = vertical_angle
+                
+                # Обновляем визуализацию
+                self.vis_plates[i].end_point = end_point
+                self.vis_plates[i].angles = (np.radians(vertical_angle), 0.0, 0.0)
+                
+            else:
+                # Остальные платы крепятся к концу предыдущей
+                prev_plate = self.sim_plates[i-1]
+                current_plate = self.sim_plates[i]
+                
+                # Наследуем точку крепления от предыдущей платы
+                current_plate.start_point = prev_plate.end_point
+                
+                # Случайный наклон
+                vertical_angle = np.random.uniform(-15, 15)
+                angle_rad = np.radians(vertical_angle)
+                
+                # Вычисляем новую конечную точку
+                end_point = (
+                    current_plate.start_point[0],
+                    current_plate.start_point[1] + current_plate.height * np.cos(angle_rad),
+                    current_plate.start_point[2] + current_plate.height * np.sin(angle_rad)
+                )
+                
+                # Обновляем данные
+                current_plate.end_point = end_point
+                current_plate.vertical_angle = vertical_angle
+                
+                # Обновляем визуализацию
+                self.vis_plates[i].start_point = current_plate.start_point
+                self.vis_plates[i].end_point = end_point
+                self.vis_plates[i].angles = (np.radians(vertical_angle), 0.0, 0.0)
 
-        # Обновляем позиции с учетом новых углов
-        self.update_plate_positions()
-
-        # Проверяем валидность
-        if not is_valid_state(self.plates, self.config):
-            server_logger.warning("Invalid state detected, reducing velocities")
-            self.velocities = [v * 0.5 for v in self.velocities]
-            self.update_plate_positions()
+            server_logger.debug(f"Updated plate {i}:")
+            server_logger.debug(f"  start: {self.vis_plates[i].start_point}")
+            server_logger.debug(f"  end: {self.vis_plates[i].end_point}")
+            server_logger.debug(f"  angles: {self.vis_plates[i].angles}")
 
     def get_state(self) -> SystemState:
+        """Возвращает текущее состояние для визуализации"""
+        server_logger.debug("Sending state:")
+        server_logger.debug(f"Number of plates: {len(self.vis_plates)}")
+        
+        for i, plate in enumerate(self.vis_plates):
+            server_logger.debug(f"Plate {i}: start={plate.start_point}, end={plate.end_point}")
+            
         return SystemState(
             timestamp=datetime.now(),
-            plates=self.plates,
-            plate_base_length=self.config.BASE_LENGTH,
-            plate_width=self.config.BASE_LENGTH * self.config.WIDTH_RATIO
+            plates=self.vis_plates,
+            plate_base_height=float(self.config.BASE_LENGTH)
         )
-        

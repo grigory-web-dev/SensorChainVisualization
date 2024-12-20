@@ -4,19 +4,17 @@ from dataclasses import dataclass
 @dataclass
 class SimConfig:
     # Физические ограничения
-    MIN_ANGLE: float = 0.087  # ~5 градусов
-    MAX_ANGLE: float = 1.57   # ~90 градусов
-    ANGLE_STEP: float = 0.02  # Максимальное изменение угла за шаг
-    DAMPING: float = 0.95     # Коэффициент затухания
+    MAX_VERTICAL_ANGLE: float = 30.0  # максимальный угол отклонения от вертикали
+    MIN_VERTICAL_ANGLE: float = -30.0  # минимальный угол отклонения от вертикали
     
     # Геометрические параметры
-    BASE_LENGTH: float = 200.0  # мм
-    WIDTH_RATIO: float = 0.6    # Отношение ширины к длине
-    THICKNESS_RATIO: float = 0.1 # Отношение толщины к длине
+    BASE_LENGTH: float = 200.0  # высота платы в мм
+    WIDTH_RATIO: float = 0.6    # для визуализации: отношение ширины к высоте
+    THICKNESS_RATIO: float = 0.1 # для визуализации: отношение толщины к высоте
     
     # Параметры симуляции
-    UPDATE_RATE: float = 1/60  # 60 FPS
-    NUM_PLATES: int = 5        # Количество пластин
+    UPDATE_RATE: float = 1/1  # 60 FPS
+    NUM_PLATES: int = 4        # Количество пластин
 
 @dataclass
 class ServerConfig:

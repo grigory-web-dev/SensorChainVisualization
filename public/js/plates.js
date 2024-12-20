@@ -8,8 +8,12 @@ export class PlatesManager {
         this.scene = scene3D.scene;
         this.worldCenter = scene3D.worldCenter;
         this.plates = [];
+        this.debugObjects = {
+            points: [],
+            lines: []
+        };
         this.debug = true;
-        this.scaleForDisplay = 0.01; // Масштабный коэффициент для перевода мм в метры
+        this.scaleForDisplay = 0.01;  // конвертация мм в метры
 
         console.log('World center:', this.worldCenter);
 
@@ -34,6 +38,7 @@ export class PlatesManager {
 
     clearScene() {
         if (this.debug) console.log('Clearing scene');
+
         this.plates.forEach(plate => {
             this.scene.remove(plate);
             if (plate.geometry) plate.geometry.dispose();
@@ -44,19 +49,49 @@ export class PlatesManager {
             }
         });
         this.plates = [];
+
+        this.debugObjects.points.forEach(point => {
+            this.scene.remove(point);
+            point.geometry.dispose();
+            point.material.dispose();
+        });
+        this.debugObjects.points = [];
+
+        this.debugObjects.lines.forEach(line => {
+            this.scene.remove(line);
+            line.geometry.dispose();
+            line.material.dispose();
+        });
+        this.debugObjects.lines = [];
+    }
+
+    createDebugPoint(color = 0xff0000) {
+        const geometry = new THREE.SphereGeometry(0.03);
+        const material = new THREE.MeshBasicMaterial({ color: color });
+        return new THREE.Mesh(geometry, material);
+    }
+
+    createDebugLine(start, end, color = 0xffff00) {
+        const points = [
+            new THREE.Vector3(...start),
+            new THREE.Vector3(...end)
+        ];
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({ color: color });
+        return new THREE.Line(geometry, material);
     }
 
     createPlate(plateData) {
         if (this.debug) console.log('Creating plate with data:', plateData);
 
         // Преобразуем размеры из мм в метры
-        const length = plateData.length * this.scaleForDisplay;
-        const width = plateData.width * this.scaleForDisplay;
-        const height = length * 0.1; // Толщина 10% от длины
+        //const height = plateData.height * this.scaleForDisplay;
+        const height = plateData.height * this.scaleForDisplay * 0.9;
+        const width = height * 0.6;
+        const thickness = height * 0.1;
 
-        if (this.debug) console.log('Scaled dimensions:', { length, width, height });
-
-        const geometry = new THREE.BoxGeometry(length, height, width);
+        // Создаем геометрию платы
+        const geometry = new THREE.BoxGeometry(thickness, height, width);
         const material = new THREE.MeshStandardMaterial({
             color: 0x44ff44,
             metalness: 0.5,
@@ -68,9 +103,16 @@ export class PlatesManager {
         plate.castShadow = true;
         plate.receiveShadow = true;
 
+        // Разворачиваем плату на 90 градусов вокруг оси X чтобы она стояла вертикально
+        plate.rotation.x = Math.PI / 2;
+        // Поворачиваем плату по Z чтобы она встала вертикально
+        plate.rotation.z = Math.PI / 2;
+        // Поворачиваем по Y чтобы развернуть её в правильном направлении
+        plate.rotation.y = -Math.PI / 2;
+
         // Создаем метку
         const label = this.createPlateLabel(plateData.index + 1);
-        label.position.set(0, height + 0.02, 0); // Располагаем метку над платой
+        label.position.set(0, height / 2 + 0.05, 0);
         plate.add(label);
 
         plate.userData = {
@@ -96,7 +138,7 @@ export class PlatesManager {
         const texture = new THREE.CanvasTexture(canvas);
         const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
         const sprite = new THREE.Sprite(spriteMaterial);
-        sprite.scale.set(0.4, 0.4, 0.4);
+        sprite.scale.set(0.3, 0.3, 0.3);
         return sprite;
     }
 
@@ -114,6 +156,12 @@ export class PlatesManager {
             return;
         }
 
+        // Очищаем отладочные объекты
+        this.debugObjects.points.forEach(point => this.scene.remove(point));
+        this.debugObjects.lines.forEach(line => this.scene.remove(line));
+        this.debugObjects.points = [];
+        this.debugObjects.lines = [];
+
         // Создаем новые платы, если их ещё нет
         while (this.plates.length < data.plates.length) {
             const plate = this.createPlate(data.plates[this.plates.length]);
@@ -126,24 +174,63 @@ export class PlatesManager {
             const plate = this.plates[i];
             if (!plate) return;
 
-            // Преобразуем координаты из мм в метры
-            const newPosition = {
-                x: plateData.center[0] * this.scaleForDisplay,
-                y: plateData.center[1] * this.scaleForDisplay,
-                z: plateData.center[2] * this.scaleForDisplay
+            // Преобразуем точки из мм в метры
+            const start = Array.isArray(plateData.start_point)
+                ? plateData.start_point.map(x => x * this.scaleForDisplay)
+                : [0, 0, 0];
+            const end = Array.isArray(plateData.end_point)
+                ? plateData.end_point.map(x => x * this.scaleForDisplay)
+                : [0, 0, 0];
+
+            // Создаем отладочные точки
+            const startPointMesh = this.createDebugPoint(0xff0000);
+            startPointMesh.position.set(...start);
+            this.scene.add(startPointMesh);
+            this.debugObjects.points.push(startPointMesh);
+
+            const endPointMesh = this.createDebugPoint(0x00ff00);
+            endPointMesh.position.set(...end);
+            this.scene.add(endPointMesh);
+            this.debugObjects.points.push(endPointMesh);
+
+            // Создаем линию между точками
+            const line = this.createDebugLine(start, end);
+            this.scene.add(line);
+            this.debugObjects.lines.push(line);
+
+            // Вычисляем центр платы
+            const center = {
+                x: (start[0] + end[0]) / 2,
+                y: (start[1] + end[1]) / 2,
+                z: (start[2] + end[2]) / 2
             };
 
             if (this.debug) {
-                console.log(`Updating plate ${i}:`, {
-                    rawCenter: plateData.center,
-                    scaledPosition: newPosition,
+                console.log(`Plate ${i}:`, {
+                    start,
+                    end,
+                    center,
                     angles: plateData.angles
                 });
             }
 
-            // Обновляем позицию и поворот
-            plate.position.set(newPosition.x, newPosition.y, newPosition.z);
-            plate.rotation.set(...plateData.angles);
+            // Обновляем позицию
+            plate.position.set(center.x, center.y, center.z);
+
+            // Применяем углы поворота от базовой вертикальной ориентации
+            plate.rotation.set(
+                plateData.angles[0], // вертикальная ориентация
+                plateData.angles[1] + Math.PI / 2,
+                plateData.angles[2]
+            );
+            /*
+                        // ДОЛЖНО БЫТЬ:
+                        plate.rotation.set(
+                            plateData.angles[0],
+                            -Math.PI / 2,  // базовый поворот по Y
+                            Math.PI / 2    // базовый поворот по Z
+                        );
+            */
         });
 
         this.updateInfoPanel(data);
@@ -155,14 +242,15 @@ export class PlatesManager {
 
         panel.innerHTML = `
             <div class="plate-dimensions">
-                Base size: ${(data.plate_base_length).toFixed(1)}x${(data.plate_width).toFixed(1)} mm
+                Base height: ${(data.plate_base_height).toFixed(1)} mm
             </div>
             ${data.plates.map((plate) => `
                 <div class="plate-info">
                     Plate ${plate.index + 1}:<br>
-                    Position: (${plate.center.map(v => v.toFixed(1)).join(', ')}) mm<br>
+                    Start: (${plate.start_point.map(v => v.toFixed(1)).join(', ')}) mm<br>
+                    End: (${plate.end_point.map(v => v.toFixed(1)).join(', ')}) mm<br>
                     Angles: (${plate.angles.map(v => (v * 180 / Math.PI).toFixed(1)).join(', ')})°<br>
-                    Length: ${plate.length.toFixed(1)} mm
+                    Height: ${plate.height.toFixed(1)} mm
                 </div>
             `).join('')}
         `;
