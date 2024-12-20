@@ -93,7 +93,7 @@ export class PlatesManager {
         // Создаем геометрию платы
         const geometry = new THREE.BoxGeometry(thickness, height, width);
         const material = new THREE.MeshStandardMaterial({
-            color: 0x44ff44,
+            color: 0x88ff44,
             metalness: 0.5,
             roughness: 0.2,
             side: THREE.DoubleSide
@@ -112,7 +112,8 @@ export class PlatesManager {
 
         // Создаем метку
         const label = this.createPlateLabel(plateData.index + 1);
-        label.position.set(0, height / 2 + 0.05, 0);
+        //label.position.set(0, height / 2 + 0.05, 0);
+        label.position.set(0, 0, - width * 0.7);  // перемещаем вперед на половину ширины + отступ
         plate.add(label);
 
         plate.userData = {
