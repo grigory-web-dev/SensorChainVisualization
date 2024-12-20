@@ -1,40 +1,25 @@
-# config.py
-import numpy as np
+# src/config.py
+from dataclasses import dataclass
 
+@dataclass
 class SimConfig:
-    # Параметры пластин
-    NUM_PLATES = 5          # Количество пластин
-    PLATE_LENGTH = 2.0      # Длина пластины (метры)
-    PLATE_WIDTH = 1.0       # Ширина пластины (метры)
+    # Физические ограничения
+    MIN_ANGLE: float = 0.087  # ~5 градусов
+    MAX_ANGLE: float = 1.57   # ~90 градусов
+    ANGLE_STEP: float = 0.02  # Максимальное изменение угла за шаг
+    DAMPING: float = 0.95     # Коэффициент затухания
     
-    # Углы и ограничения
-    MIN_ANGLE = np.pi/6     # Минимальный угол от стола (30 градусов)
-    MAX_ANGLE = np.pi/2     # Максимальный угол от стола (90 градусов)
-    ANGLE_STEP = np.pi/36   # Шаг изменения угла (5 градусов)
-    
-    # Физические параметры
-    DAMPING = 0.95          # Коэффициент затухания
-    MIN_DISTANCE = 0.1      # Минимальное расстояние между пластинами
-    GRAVITY = 9.81          # Ускорение свободного падения
+    # Геометрические параметры
+    BASE_LENGTH: float = 200.0  # мм
+    WIDTH_RATIO: float = 0.6    # Отношение ширины к длине
+    THICKNESS_RATIO: float = 0.1 # Отношение толщины к длине
     
     # Параметры симуляции
-    UPDATE_RATE = 0.1       # Частота обновления (секунды)
-    MAX_ATTEMPTS = 10       # Максимальное количество попыток найти валидное состояние
-    
-    # Параметры визуализации
-    GRID_SIZE = 10          # Размер сетки
-    GRID_DIVISIONS = 10     # Количество делений сетки
-    TABLE_SIZE = 20         # Размер стола
-    
-    # Камера по умолчанию
-    CAMERA_FOV = 75         # Угол обзора камеры
-    CAMERA_NEAR = 0.1       # Ближняя плоскость отсечения
-    CAMERA_FAR = 1000       # Дальняя плоскость отсечения
-    CAMERA_POSITION = (5, 5, 5)  # Начальная позиция камеры
+    UPDATE_RATE: float = 1/60  # 60 FPS
+    NUM_PLATES: int = 5        # Количество пластин
 
+@dataclass
 class ServerConfig:
-    HOST = "127.0.0.1"
-    PORT = 8000
-    RELOAD = True
-    STATIC_DIR = "public"
-    WS_HEARTBEAT = 30       # Интервал проверки соединения (секунды)
+    HOST: str = "localhost"
+    PORT: int = 8000
+    RELOAD: bool = True

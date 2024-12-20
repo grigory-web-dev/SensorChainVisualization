@@ -1,3 +1,6 @@
+// script.js
+console.log("script.js подключён и работает");
+
 const svg = d3.select("#simulation");
 const width = +svg.attr("width");
 const height = +svg.attr("height");

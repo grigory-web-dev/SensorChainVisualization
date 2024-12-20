@@ -1,93 +1,148 @@
-# simulation.py
+# src/simulation.py
 import numpy as np
 from datetime import datetime
+from src.models import Plate, SystemState
+from src.physics import is_valid_state, rotate_point
 from src.config import SimConfig
-from src.models import SystemState, Plate
-from src.physics import is_valid_state
-from src.logger import server_logger, data_logger
-import json
+from src.logger import server_logger
 
 class PlatesSimulation:
     def __init__(self, config: SimConfig):
         self.config = config
-        initial_centers = [
-            (375, 178, 190),  # пример начальных центров в мм
-            (420, 200, 185),
-            (380, 190, 195),
-            (400, 185, 188),
-            (390, 195, 192)
-        ]
+        self.plates = []
+        self.velocities = []
+        self.initialize_plates()
+
+    def get_plate_ends(self, plate):
+        """Вычисляет координаты концов платы"""
+        angle = plate.angles[0]
+        half_length = plate.length / 2
         
-        # Рассчитываем среднее расстояние между центрами
-        total_distance = 0
-        count = 0
-        for i in range(len(initial_centers) - 1):
-            for j in range(i + 1, len(initial_centers)):
-                x1, y1, z1 = initial_centers[i]
-                x2, y2, z2 = initial_centers[j]
-                distance = np.sqrt((x2-x1)**2 + (y2-y1)**2 + (z2-z1)**2)
-                total_distance += distance
-                count += 1
+        # Ближний конец (точка крепления к предыдущей плате)
+        near_end = (
+            plate.center[0],
+            plate.center[1] - np.sin(angle) * half_length,
+            plate.center[2] - np.cos(angle) * half_length
+        )
         
-        # Устанавливаем размеры пластин
-        self.plate_length = total_distance / count  # среднее расстояние
-        self.plate_width = self.plate_length / 1.5  # ширина в 1.5 раза меньше
+        # Дальний конец (точка крепления следующей платы)
+        far_end = (
+            plate.center[0],
+            plate.center[1] + np.sin(angle) * half_length,
+            plate.center[2] + np.cos(angle) * half_length
+        )
         
-        server_logger.info(f"Calculated plate dimensions: {self.plate_length:.1f}x{self.plate_width:.1f} mm")
+        return near_end, far_end
+
+    def get_plate_center_from_hinge(self, hinge_point, angle, length):
+        """Вычисляет центр платы по точке крепления"""
+        half_length = length / 2
+        return (
+            0.0,  # x всегда 0
+            hinge_point[1] + np.sin(angle) * half_length,  # y
+            hinge_point[2] + np.cos(angle) * half_length   # z
+        )
+
+    def initialize_plates(self):
+        self.plates = []
+        self.velocities = []
+        plate_length = self.config.BASE_LENGTH
+        plate_width = self.config.BASE_LENGTH * self.config.WIDTH_RATIO
+
+        # Первая плата - её точка крепления в (0,0,0)
+        first_center = self.get_plate_center_from_hinge(
+            (0.0, 0.0, 0.0),
+            self.config.MIN_ANGLE,
+            plate_length
+        )
+        
+        first_plate = Plate(
+            center=first_center,
+            angles=(self.config.MIN_ANGLE, 0.0, 0.0),
+            width=plate_width,
+            length=plate_length,
+            index=0
+        )
+        self.plates.append(first_plate)
+        self.velocities.append(np.zeros(3))
+
+        # Добавляем остальные платы
+        for i in range(1, self.config.NUM_PLATES):
+            prev_plate = self.plates[i-1]
+            _, prev_far_end = self.get_plate_ends(prev_plate)
+            
+            # Центр новой платы относительно точки крепления
+            new_center = self.get_plate_center_from_hinge(
+                prev_far_end,  # Крепим к дальнему концу предыдущей
+                self.config.MIN_ANGLE,
+                plate_length
+            )
+
+            new_plate = Plate(
+                center=new_center,
+                angles=(self.config.MIN_ANGLE, 0.0, 0.0),
+                width=plate_width,
+                length=plate_length,
+                index=i
+            )
+            self.plates.append(new_plate)
+            self.velocities.append(np.zeros(3))
+
+    def update_plate_positions(self):
+        """Обновляет позиции всех плат, сохраняя точки крепления"""
+        # Первая плата вращается вокруг (0,0,0)
+        self.plates[0].center = self.get_plate_center_from_hinge(
+            (0.0, 0.0, 0.0),
+            self.plates[0].angles[0],
+            self.plates[0].length
+        )
+        
+        # Обновляем остальные платы
+        for i in range(1, len(self.plates)):
+            prev_plate = self.plates[i-1]
+            curr_plate = self.plates[i]
+            
+            # Получаем точку крепления (дальний конец предыдущей платы)
+            _, hinge_point = self.get_plate_ends(prev_plate)
+            
+            # Обновляем центр текущей платы
+            curr_plate.center = self.get_plate_center_from_hinge(
+                hinge_point,
+                curr_plate.angles[0],
+                curr_plate.length
+            )
 
     def update(self):
-        """Update plate positions and orientations"""
-        try:
-            max_attempts = 10
+        # Обновляем углы всех плат
+        for i in range(len(self.plates)):
+            acceleration = np.zeros(3)
+            acceleration[0] = np.random.uniform(-self.config.ANGLE_STEP, self.config.ANGLE_STEP)
             
-            for _ in range(max_attempts):
-                new_plates = []
-                
-                for i, plate in enumerate(self.plates):
-                    # Update angular velocities with random accelerations
-                    for j in range(3):
-                        acceleration = np.random.uniform(-self.config.ANGLE_STEP, 
-                                                      self.config.ANGLE_STEP)
-                        self.velocities[i][j] = (self.velocities[i][j] * self.config.DAMPING + 
-                                               acceleration)
-                    
-                    # Calculate new angles
-                    new_angles = [
-                        np.clip(a + v, self.config.MIN_ANGLE, self.config.MAX_ANGLE)
-                        for a, v in zip(plate.angles, self.velocities[i])
-                    ]
-                    
-                    # Create new plate state
-                    new_plate = Plate(
-                        center=plate.center,
-                        angles=tuple(new_angles),
-                        width=plate.width,
-                        length=plate.length
-                    )
-                    new_plates.append(new_plate)
-                
-                # Check if new state is valid
-                if is_valid_state(new_plates, self.config):
-                    self.plates = new_plates
-                    break
-                else:
-                    # Reduce velocities if state is invalid
-                    for velocities in self.velocities:
-                        for j in range(3):
-                            velocities[j] *= 0.5
+            self.velocities[i][0] *= self.config.DAMPING
+            self.velocities[i][0] += acceleration[0]
             
-        except Exception as e:
-            server_logger.error("Error in simulation update: %s", str(e))
-            raise
+            new_angle = np.clip(
+                self.plates[i].angles[0] + self.velocities[i][0],
+                self.config.MIN_ANGLE,
+                self.config.MAX_ANGLE
+            )
+            
+            self.plates[i].angles = (new_angle, 0.0, 0.0)
+
+        # Обновляем позиции с учетом новых углов
+        self.update_plate_positions()
+
+        # Проверяем валидность
+        if not is_valid_state(self.plates, self.config):
+            server_logger.warning("Invalid state detected, reducing velocities")
+            self.velocities = [v * 0.5 for v in self.velocities]
+            self.update_plate_positions()
 
     def get_state(self) -> SystemState:
-        """Get current system state"""
-        state = SystemState(
+        return SystemState(
             timestamp=datetime.now(),
-            plates=self.plates
+            plates=self.plates,
+            plate_base_length=self.config.BASE_LENGTH,
+            plate_width=self.config.BASE_LENGTH * self.config.WIDTH_RATIO
         )
-        try:
-            data_logger.info(json.dumps(state.to_dict()))
-        except Exception as e:
-            server_logger.error(f"Failed to log data: {e}")
-        return state
+        
