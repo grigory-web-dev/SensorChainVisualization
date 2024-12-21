@@ -5,7 +5,8 @@ export class PlatesManager {
     constructor(scene3D) {
         // Основные параметры
         this.scene3D = scene3D;
-        this.scene = scene3D.scene;
+        this.scene = scene3D.getMovableSystem(); // Для добавления перемещаемых объектов
+        this.mainScene = scene3D.scene;          // Для эффектов и рендера
         this.worldCenter = scene3D.worldCenter;
         this.scaleForDisplay = 0.01;  // конвертация мм в метры
 
@@ -24,8 +25,8 @@ export class PlatesManager {
 
         // Переопределяем рендер для поддержки эффектов
         this.scene3D.render = () => {
-            this.scene3D.renderer.render(this.scene, this.scene3D.camera);
-            this.outlineEffect.render(this.scene, this.scene3D.camera);
+            this.scene3D.renderer.render(this.mainScene, this.scene3D.camera);  // Рендерим всю сцену
+            this.outlineEffect.render(this.mainScene, this.scene3D.camera);     // Эффекты тоже для всей сцены
         };
     }
 
@@ -208,15 +209,27 @@ export class PlatesManager {
         const panel = document.getElementById('info-panel');
         if (!panel) return;
 
+        const formatCoord = num => num.toFixed(1).padStart(8);  // Фиксированная ширина для чисел
+        const formatAngle = num => (num * 180 / Math.PI).toFixed(1).padStart(8);
+
         let html = `
             <div class="system-info">
-                <div>Base height: ${data.plate_base_height.toFixed(1)} mm</div>
+                <div class="plate-info-row">
+                    <span class="plate-info-label">Base Height:</span>
+                    <span class="plate-info-value">${formatCoord(data.plate_base_height)} mm</span>
+                </div>
             </div>
             ${data.plates.map((plate) => `
                 <div class="plate-info">
-                    <div>Plate ${plate.plate_id + 1}:</div>
-                    <div>Position: (${plate.position.map(v => v.toFixed(1)).join(', ')}) mm</div>
-                    <div>Orientation: (${plate.orientation.map(v => (v * 180 / Math.PI).toFixed(1)).join(', ')})°</div>
+                    <div class="plate-info-title">Plate ${plate.plate_id + 1}</div>
+                    <div class="plate-info-row">
+                        <span class="plate-info-label">Position:</span>
+                        <span class="plate-info-value">(${plate.position.map(formatCoord).join(', ')})</span>
+                    </div>
+                    <div class="plate-info-row">
+                        <span class="plate-info-label">Angles:</span>
+                        <span class="plate-info-value">(${plate.orientation.map(formatAngle).join(', ')})</span>
+                    </div>
                 </div>
             `).join('')}
         `;

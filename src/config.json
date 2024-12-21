@@ -1,0 +1,37 @@
+{
+    "sensors": {
+        "count": 5,
+        "plates": [
+            {
+                "length": 100, // мм
+                "width": 30, // мм
+                "thickness": 2 // мм
+            },
+            {
+                "length": 100,
+                "width": 30,
+                "thickness": 2
+            },
+            {
+                "length": 100,
+                "width": 30,
+                "thickness": 2
+            },
+            {
+                "length": 100,
+                "width": 30,
+                "thickness": 2
+            },
+            {
+                "length": 100,
+                "width": 30,
+                "thickness": 2
+            }
+        ]
+    },
+    "udp": {
+        "port": 12345,
+        "host": "127.0.0.1"
+    },
+    "update_rate": 10
+}
