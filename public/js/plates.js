@@ -16,15 +16,11 @@ export class PlatesManager {
             lines: []
         };
 
-        // Версии протокола, которые мы поддерживаем
-        this.supportedVersions = ["1.0", "1.1"];
-
         // Настройка эффектов
         this.setupEffects();
 
         // Очистка и инициализация
         this.clearScene();
-        this.initPlates();
 
         // Переопределяем рендер для поддержки эффектов
         this.scene3D.render = () => {
@@ -46,13 +42,13 @@ export class PlatesManager {
         });
     }
 
-    // Управление 3D объектами
+    // Создание 3D объектов
     createPlate(plateData) {
         const height = plateData.height * this.scaleForDisplay * 0.9;
         const width = height * 0.6;
         const thickness = height * 0.1;
 
-        // Геометрия и материал
+        // Геометрия и материал платы
         const geometry = new THREE.BoxGeometry(thickness, height, width);
         const material = new THREE.MeshStandardMaterial({
             color: 0x88ff44,
@@ -72,7 +68,7 @@ export class PlatesManager {
             Math.PI / 2   // Z - поворот для правильной ориентации
         );
 
-        // Добавляем метку
+        // Добавляем метку с номером
         const label = this.createPlateLabel(plateData.plate_id + 1);
         label.position.set(0, 0, -width * 0.7);
         plate.add(label);
@@ -82,7 +78,6 @@ export class PlatesManager {
     }
 
     createPlateLabel(number) {
-        // Создаем текстуру с номером
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         canvas.width = 64;
@@ -154,22 +149,9 @@ export class PlatesManager {
 
     // Обновление состояния
     updatePlates(data) {
-        console.log('Received update data:', JSON.stringify(data, null, 2));
-
-        if (!this.supportedVersions.includes(data.version)) {
+        // Проверяем версию протокола
+        if (data.version !== "1.0") {
             console.warn("Unsupported protocol version:", data.version);
-            return;
-        }
-
-        // Проверяем статус калибровки
-        if (data.needs_recalibration) {
-            console.log(`System needs recalibration. Age: ${data.calibration_age.toFixed(1)}s`);
-        }
-
-        // Если нет данных о платах, но есть сырые данные - система калибруется
-        if (data.plates.length === 0 && data.raw_data) {
-            console.log("System is calibrating...");
-            this.updateInfoPanel(data);
             return;
         }
 
@@ -198,21 +180,19 @@ export class PlatesManager {
         const plate = this.plates[index];
         if (!plate) return;
 
-        // Преобразуем координаты
+        // Преобразуем координаты из мм в метры
         const position = plateData.position.map(x => x * this.scaleForDisplay);
 
-        // Создаем отладочную визуализацию
-        const pointMesh = this.createDebugPoint(
-            plateData.position_confidence < 0.5 ? 0xff0000 : 0x00ff00
-        );
+        // Создаем отладочные точки
+        const pointMesh = this.createDebugPoint();
         pointMesh.position.set(...position);
         this.scene.add(pointMesh);
         this.debugObjects.points.push(pointMesh);
 
-        // Позиционируем плату
+        // Обновляем позицию платы
         plate.position.set(...position);
 
-        // Применяем ориентацию
+        // Применяем новую ориентацию
         const quaternion = new THREE.Quaternion();
         quaternion.setFromEuler(new THREE.Euler(
             plateData.orientation[0],
@@ -221,13 +201,9 @@ export class PlatesManager {
             'XYZ'
         ));
         plate.quaternion.copy(quaternion);
-
-        // Визуально отмечаем платы, требующие рекалибровки
-        const plateColor = plateData.needs_recalibration ? 0xff4444 : 0x88ff44;
-        plate.material.color.setHex(plateColor);
     }
 
-    // Обновление UI
+    // Обновление информационной панели
     updateInfoPanel(data) {
         const panel = document.getElementById('info-panel');
         if (!panel) return;
@@ -235,36 +211,16 @@ export class PlatesManager {
         let html = `
             <div class="system-info">
                 <div>Base height: ${data.plate_base_height.toFixed(1)} mm</div>
-                <div>Calibration age: ${data.calibration_age.toFixed(1)}s</div>
-                <div class="status ${data.needs_recalibration ? 'warning' : ''}">
-                    Status: ${data.needs_recalibration ? 'Needs Recalibration' : 'OK'}
-                </div>
             </div>
-        `;
-
-        if (data.plates.length > 0) {
-            html += data.plates.map((plate) => `
-                <div class="plate-info ${plate.needs_recalibration ? 'warning' : ''}">
+            ${data.plates.map((plate) => `
+                <div class="plate-info">
                     <div>Plate ${plate.plate_id + 1}:</div>
                     <div>Position: (${plate.position.map(v => v.toFixed(1)).join(', ')}) mm</div>
                     <div>Orientation: (${plate.orientation.map(v => (v * 180 / Math.PI).toFixed(1)).join(', ')})°</div>
-                    <div>Confidence: ${(plate.position_confidence * 100).toFixed(1)}%</div>
                 </div>
-            `).join('');
-        } else if (data.raw_data) {
-            html += `
-                <div class="calibration-info">
-                    <div>System is calibrating...</div>
-                    <div>Raw data from ${data.raw_data.length} sensors</div>
-                </div>
-            `;
-        }
+            `).join('')}
+        `;
 
         panel.innerHTML = html;
-    }
-
-    initPlates() {
-        // Plates will be initialized when first data arrives
-        console.log('Waiting for initial data...');
     }
 }

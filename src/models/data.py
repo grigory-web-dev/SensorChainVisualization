@@ -1,11 +1,13 @@
 from dataclasses import dataclass
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional
 from datetime import datetime
 
 @dataclass
 class IMUData:
     """Raw IMU sensor data"""
-    plate_id: int  # Добавляем id платы
+    plate_id: int
+    position: Tuple[float, float, float]  # текущая позиция в пространстве
+    orientation: Tuple[float, float, float]  # текущие углы ориентации
     
     # Accelerometer data in m/s²
     accel_x: float
@@ -20,9 +22,11 @@ class IMUData:
     # Microseconds since epoch
     timestamp: int
     
-    def to_dict(self) -> Dict:
+    def to_dict(self):
         return {
             "plate_id": self.plate_id,
+            "position": [float(x) for x in self.position],
+            "orientation": [float(x) for x in self.orientation],
             "accel": {
                 "x": float(self.accel_x),
                 "y": float(self.accel_y),
@@ -37,41 +41,19 @@ class IMUData:
         }
 
 @dataclass
-class PlateCalibration:
-    """Calibration data for a single plate"""
-    plate_id: int
-    reference_position: Tuple[float, float, float]  # положение при калибровке
-    reference_orientation: Tuple[float, float, float]  # ориентация при калибровке
-    calibration_time: datetime
-
-@dataclass
-class PlateState:
-    """Current state of a single plate"""
-    plate_id: int
-    imu_data: IMUData
-    relative_position: Tuple[float, float, float]  # смещение от калибровочного положения
-    relative_orientation: Tuple[float, float, float]  # смещение углов от калибровки
-    last_update: datetime
-    accumulated_error: float  # оценка накопленной ошибки
-
-@dataclass
 class VisPlate:
     """Visualization data for a plate"""
     plate_id: int
     height: float
-    position: Tuple[float, float, float]  # абсолютная позиция в пространстве
-    orientation: Tuple[float, float, float]  # абсолютная ориентация
-    position_confidence: float  # 0-1, точность позиции
-    needs_recalibration: bool
+    position: Tuple[float, float, float]
+    orientation: Tuple[float, float, float]
     
     def to_dict(self):
         return {
             "plate_id": self.plate_id,
             "position": [float(x) for x in self.position],
             "orientation": [float(x) for x in self.orientation],
-            "height": float(self.height),
-            "position_confidence": float(self.position_confidence),
-            "needs_recalibration": self.needs_recalibration
+            "height": float(self.height)
         }
 
 @dataclass
@@ -79,8 +61,6 @@ class SystemState:
     """Complete system state"""
     timestamp: datetime
     plates: List[VisPlate]
-    calibration_age: float  # время с последней калибровки
-    needs_recalibration: bool
     plate_base_height: float
     raw_data: Optional[List[IMUData]] = None
 
@@ -88,9 +68,7 @@ class SystemState:
         return {
             "timestamp": self.timestamp.isoformat(),
             "plates": [plate.to_dict() for plate in self.plates],
-            "calibration_age": self.calibration_age,
-            "needs_recalibration": self.needs_recalibration,
             "plate_base_height": float(self.plate_base_height),
             "raw_data": [data.to_dict() for data in self.raw_data] if self.raw_data else None,
-            "version": "1.1"
+            "version": "1.0"
         }
