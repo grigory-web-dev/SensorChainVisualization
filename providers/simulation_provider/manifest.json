@@ -1,0 +1,23 @@
+{
+    "name": "simulation_provider",
+    "display_name": "Physics Simulation Provider",
+    "description": "Provides simulated IMU data based on physics calculations",
+    "data_rate": {
+        "mode": "fixed",
+        "rate": 100
+    },
+    "data_format": {
+        "coordinates": {
+            "type": "tuple",
+            "elements": ["x", "y", "z"]
+        },
+        "angles": {
+            "type": "tuple",
+            "elements": ["roll", "pitch", "yaw"]
+        }
+    },
+    "features": {
+        "is_real_device": false,
+        "has_magnetometer": false
+    }
+}

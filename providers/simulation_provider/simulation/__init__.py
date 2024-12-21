@@ -1,4 +1,4 @@
-from src.simulation.simulator import PlatesSimulation
-from src.simulation.imu import IMUSimulator
+from .simulator import PlatesSimulation
+from .imu import IMUSimulator
 
 __all__ = ['PlatesSimulation', 'IMUSimulator']

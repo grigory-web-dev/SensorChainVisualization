@@ -2,16 +2,21 @@ from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import asyncio
-import logging
-from src.config import ServerConfig
-from src.simulation import PlatesSimulation
-from src.logger import server_logger
+from server.provider_factory import ProviderFactory
+from server.logger import server_logger
 
 app = FastAPI()
 app.mount("/public", StaticFiles(directory="public"), name="public")
 
-config = ServerConfig()
-simulation = PlatesSimulation(config)
+provider = None
+
+@app.on_event("startup")
+async def startup_event():
+    global provider
+    provider = await ProviderFactory.create_from_config()
+    if provider:
+        # Запускаем провайдер в фоновом режиме
+        asyncio.create_task(provider.start())
 
 @app.get("/")
 async def get_index():
@@ -25,17 +30,15 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         await websocket.accept()
         server_logger.info(f"New WebSocket connection: {client_id}")
-        server_logger.info(f"Client {client_id} connected successfully")
-
+        
         while True:
             try:
-                # Get latest state including IMU data
-                state = simulation.update()
-                # Send to client
-                await websocket.send_json(state.to_dict())
-                # Wait according to update rate
-                await asyncio.sleep(1.0 / config.UPDATE_RATE)
-                
+                if provider:
+                    data = await provider.generate_data()
+                    if data:  # Проверяем, что данные существуют
+                        server_logger.debug(f"Sending data: {data}")  # Добавляем логирование
+                        await websocket.send_json(data)
+                await asyncio.sleep(1.0 / 100)  # 100 Hz
             except Exception as e:
                 server_logger.error(f"WebSocket error for client {client_id}: {str(e)}")
                 break

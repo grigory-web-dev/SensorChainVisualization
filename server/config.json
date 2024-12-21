@@ -1,0 +1,15 @@
+{
+    "server": {
+        "host": "localhost",
+        "port": 8000,
+        "reload": true
+    },
+    "provider": {
+        "default": "simulation_provider",
+        "scan_path": "providers"
+    },
+    "logging": {
+        "level": "INFO",
+        "file": "logs/server.log"
+    }
+}

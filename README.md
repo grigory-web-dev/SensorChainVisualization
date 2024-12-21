@@ -118,7 +118,7 @@ mkdir -p logs
 1. Создание структуры:
    ```
    project_root/
-   ├── vendor/           # Зависимости
+   ├── vendor/          # Зависимости
    ├── logs/            # Логи
    ├── public/          # Статика
    └── src/             # Код
@@ -220,4 +220,4 @@ mkdir -p logs
 
 #### Контакты
 - Email: grigorywebdev@gmail.com
-- GitHub: [ссылка на репозиторий]
+- GitHub: [\[ссылка на репозиторий\]](https://github.com/grigory-web-dev/SensorChainVisualization)
