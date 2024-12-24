@@ -3,23 +3,22 @@ import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 
 export class PlatesManager {
     constructor(scene3D) {
-        // Основные параметры
         this.scene3D = scene3D;
         this.scene = scene3D.getMovableSystem();
         this.mainScene = scene3D.scene;
         this.worldCenter = scene3D.worldCenter;
-        this.scaleForDisplay = 0.01;  // конвертация мм в метры
-        this.debugMode = true;  // Включаем отладочный режим
+        this.debugMode = true;
 
-        // Массивы для хранения объектов
+        // Масштаб: 1 единица сцены = 100 мм
+        this.scaleForDisplay = 1 / 100;
+
         this.plates = [];
         this.debugObjects = {
             points: [],
             lines: [],
-            axes: []  // Добавляем массив для осей координат
+            axes: []
         };
 
-        // Настройка эффектов
         this.setupEffects();
         this.clearScene();
 
@@ -38,43 +37,42 @@ export class PlatesManager {
         });
     }
 
-    // Создаем оси координат для отладки
     createDebugAxes(size = 0.5) {
         const axes = new THREE.Group();
 
-        // X axis - красный
-        const xGeometry = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(size, 0, 0)
-        ]);
-        const xAxis = new THREE.Line(xGeometry, new THREE.LineBasicMaterial({ color: 0xff0000 }));
-        axes.add(xAxis);
+        const createAxis = (start, end, color) => {
+            const geometry = new THREE.BufferGeometry().setFromPoints([start, end]);
+            const material = new THREE.LineBasicMaterial({ color });
+            return new THREE.Line(geometry, material);
+        };
 
-        // Y axis - зеленый
-        const yGeometry = new THREE.BufferGeometry().setFromPoints([
+        axes.add(createAxis(
             new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(0, size, 0)
-        ]);
-        const yAxis = new THREE.Line(yGeometry, new THREE.LineBasicMaterial({ color: 0x00ff00 }));
-        axes.add(yAxis);
+            new THREE.Vector3(size * 2, 0, 0),
+            0xff0000
+        ));
 
-        // Z axis - синий
-        const zGeometry = new THREE.BufferGeometry().setFromPoints([
+        axes.add(createAxis(
             new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(0, 0, size)
-        ]);
-        const zAxis = new THREE.Line(zGeometry, new THREE.LineBasicMaterial({ color: 0x0000ff }));
-        axes.add(zAxis);
+            new THREE.Vector3(0, size * 4, 0),
+            0x00ff00
+        ));
+
+        axes.add(createAxis(
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(0, 0, size * 2),
+            0x0000ff
+        ));
 
         return axes;
     }
 
     createPlate(plateData) {
-        const height = plateData.height * this.scaleForDisplay * 0.9;
-        const width = height * 0.6;
-        const thickness = height * 0.1;
+        // Получаем размеры из данных или используем значения по умолчанию
+        const defaultDimensions = [5, 50, 30]; // thickness, height, width in mm
+        const dimensions = (plateData.dimensions || defaultDimensions).map(d => d * this.scaleForDisplay);
+        const [thickness, height, width] = dimensions;
 
-        // Геометрия и материал платы
         const geometry = new THREE.BoxGeometry(thickness, height, width);
         const material = new THREE.MeshStandardMaterial({
             color: 0x88ff44,
@@ -87,21 +85,20 @@ export class PlatesManager {
         plate.castShadow = true;
         plate.receiveShadow = true;
 
-        // Поворачиваем на 90 градусов вокруг оси Y
-        plate.rotation.set(0, Math.PI / 2, 0);
-
-        // Добавляем метку с номером
+        // Добавляем номер платы в текстуру и позиционируем его
         const label = this.createPlateLabel(plateData.plate_id + 1);
-        label.position.set(width/2 + 0.1, height/2, 0);
+        label.position.set(0.1, height / 2 + 0.1, width / 2 + 0.1);
         plate.add(label);
 
-        // Добавляем оси координат для отладки
         if (this.debugMode) {
             const axes = this.createDebugAxes();
             plate.add(axes);
         }
 
-        plate.userData = { label, plateData };
+        plate.userData = {
+            label,
+            plateData
+        };
         return plate;
     }
 
@@ -132,31 +129,17 @@ export class PlatesManager {
         return new THREE.Mesh(geometry, material);
     }
 
-    createDebugLine(start, end, color = 0xffff00) {
-        const points = [
-            new THREE.Vector3(...start),
-            new THREE.Vector3(...end)
-        ];
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const material = new THREE.LineBasicMaterial({ color });
-        return new THREE.Line(geometry, material);
-    }
-
     clearScene() {
-        // Очищаем платы
         this.plates.forEach(plate => {
             this.scene.remove(plate);
             if (plate.geometry) plate.geometry.dispose();
             if (plate.material) plate.material.dispose();
-            if (plate.userData.label) {
-                if (plate.userData.label.material) {
-                    plate.userData.label.material.dispose();
-                }
+            if (plate.userData.label && plate.userData.label.material) {
+                plate.userData.label.material.dispose();
             }
         });
         this.plates = [];
 
-        // Очищаем отладочные объекты
         Object.values(this.debugObjects).forEach(objects => {
             objects.forEach(obj => {
                 this.scene.remove(obj);
@@ -168,36 +151,40 @@ export class PlatesManager {
     }
 
     updatePlates(data) {
-        console.log("Updating plates with data:", data);
-
+        // Получаем данные из сервера и обрабатываем их
         if (!data || !data.version || !data.plates) {
             console.warn("Invalid data format:", data);
             return;
         }
 
-        if (data.version !== "1.0") {
-            console.warn("Unsupported protocol version:", data.version);
-            return;
-        }
+        console.log("Raw data from server:", {
+            plates: data.plates.map(plate => ({
+                id: plate.plate_id,
+                position: [...plate.position],
+                orientation: [...plate.orientation],
+                dimensions: plate.dimensions ? [...plate.dimensions] : null
+            }))
+        });
 
-        // Очищаем отладочные объекты
+        // Очищаем предыдущие отладочные объекты и создание новых
         Object.values(this.debugObjects).forEach(objects => {
             objects.forEach(obj => this.scene.remove(obj));
             objects.length = 0;
         });
 
-        // Создаем недостающие платы
+        // Создаем новые объекты и добавляем их к сцене
         while (this.plates.length < data.plates.length) {
             const plate = this.createPlate(data.plates[this.plates.length]);
             this.scene.add(plate);
             this.plates.push(plate);
         }
 
-        // Обновляем каждую плату
+        // Обновляем все объекты
         data.plates.forEach((plateData, i) => {
             this.updateSinglePlate(plateData, i);
         });
 
+        // Обновляем информационную панель
         this.updateInfoPanel(data);
     }
 
@@ -205,64 +192,79 @@ export class PlatesManager {
         const plate = this.plates[index];
         if (!plate) return;
 
-        // Преобразуем координаты из мм в метры
-        const position = plateData.position.map(x => x * this.scaleForDisplay);
-        
-        // Отладочный вывод углов
-        console.log(`Plate ${index + 1} angles:`, {
-            raw: plateData.orientation,
-            degrees: plateData.orientation.map(angle => (angle * 180 / Math.PI).toFixed(2) + '°')
-        });
+        // Преобразуем координаты в единицы сцены и обеспечиваем положительные значения
+        const scaledPosition = plateData.position.map(coord => Math.max(0, coord * this.scaleForDisplay));
+        plate.position.set(...scaledPosition);
 
         // Создаем отладочные точки
         const pointMesh = this.createDebugPoint();
-        pointMesh.position.set(...position);
+        pointMesh.position.copy(plate.position);
         this.scene.add(pointMesh);
         this.debugObjects.points.push(pointMesh);
 
-        // Обновляем позицию платы
-        plate.position.set(...position);
-
-        // Применяем ориентацию
-        const euler = new THREE.Euler(
-            plateData.orientation[0],  // roll
-            plateData.orientation[1],  // pitch
-            plateData.orientation[2],  // yaw
-            'XYZ'
-        );
-        const quaternion = new THREE.Quaternion();
-        quaternion.setFromEuler(euler);
-        plate.quaternion.copy(quaternion);
+        // Применяем углы поворота
+        const euler = new THREE.Euler(...plateData.orientation, 'XYZ');
+        plate.setRotationFromEuler(euler);
     }
 
     updateInfoPanel(data) {
         const panel = document.getElementById('info-panel');
         if (!panel) return;
 
-        const formatCoord = num => (num !== undefined ? num.toFixed(1).padStart(8) : "N/A");
-        const formatAngle = num => (num !== undefined ? (num * 180 / Math.PI).toFixed(1).padStart(8) : "N/A");
+        // Форматируем значения, обеспечивая положительные значения
+        const formatCoord = num => Math.max(0, num).toFixed(1).padStart(8) + ' мм';
+        const formatAngle = rad => (rad * 180 / Math.PI).toFixed(1).padStart(8) + '°';
+        const formatDimension = num => num ? num.toFixed(1).padStart(8) + ' мм' : 'N/A';
 
         let html = `
             <div class="system-info">
-                <div class="plate-info-row">
-                    <span class="plate-info-label">Base Height:</span>
-                    <span class="plate-info-value">${formatCoord(data.baseHeight)} mm</span>
+                <div class="coordinates-info">
+                    <div class="axis-info">
+                        <span class="axis-label">X:</span> красный (поперечное)
+                    </div>
+                    <div class="axis-info">
+                        <span class="axis-label">Y:</span> зеленый (высота)
+                    </div>
+                    <div class="axis-info">
+                        <span class="axis-label">Z:</span> синий (продольное)
+                    </div>
+                </div>
+                <div class="scale-info">
+                    Размеры в мм (от 0 до 1000)
                 </div>
             </div>
         `;
 
         if (data.plates && Array.isArray(data.plates)) {
-            html += data.plates.map((plate) => `
+            html += data.plates.map((plate, index) => `
                 <div class="plate-info">
                     <div class="plate-info-title">Plate ${plate.plate_id + 1}</div>
                     <div class="plate-info-row">
                         <span class="plate-info-label">Position:</span>
-                        <span class="plate-info-value">(${plate.position.map(formatCoord).join(', ')})</span>
+                        <span class="plate-info-value">
+                            X: ${formatCoord(plate.position[0])}<br>
+                            Y: ${formatCoord(plate.position[1])}<br>
+                            Z: ${formatCoord(plate.position[2])}
+                        </span>
                     </div>
                     <div class="plate-info-row">
                         <span class="plate-info-label">Angles:</span>
-                        <span class="plate-info-value">(${plate.orientation.map(formatAngle).join(', ')})</span>
+                        <span class="plate-info-value">
+                            Roll (X): ${formatAngle(plate.orientation[0])}<br>
+                            Pitch (Y): ${formatAngle(plate.orientation[1])}<br>
+                            Yaw (Z): ${formatAngle(plate.orientation[2])}
+                        </span>
                     </div>
+                    ${plate.dimensions ? `
+                    <div class="plate-info-row">
+                        <span class="plate-info-label">Dimensions:</span>
+                        <span class="plate-info-value">
+                            Length: ${formatDimension(plate.dimensions[0])}<br>
+                            Width: ${formatDimension(plate.dimensions[1])}<br>
+                            Height: ${formatDimension(plate.dimensions[2])}
+                        </span>
+                    </div>
+                    ` : ''}
                 </div>
             `).join('');
         }

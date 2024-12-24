@@ -1,50 +1,100 @@
-from fastapi import FastAPI, WebSocket
+''' server scrip for the websocket server '''
+from typing import Set, Dict, Any
+from datetime import datetime
+import os
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-import asyncio
 from server.provider_factory import ProviderFactory
 from server.logger import server_logger
 
+active_connections: Set[WebSocket] = set()
+connection_stats: Dict[str, Dict] = {}
+
 app = FastAPI()
-app.mount("/public", StaticFiles(directory="public"), name="public")
-
-provider = None
-
-@app.on_event("startup")
-async def startup_event():
-    global provider
-    provider = await ProviderFactory.create_from_config()
-    if provider:
-        # Запускаем провайдер в фоновом режиме
-        asyncio.create_task(provider.start())
-
-@app.get("/")
-async def get_index():
-    server_logger.info("Serving index page")
-    return FileResponse("public/index.html")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    client_id = id(websocket)
-    
+    '''WebSocket endpoint for handling client connections'''
+    await websocket.accept()
+    client_id = str(id(websocket))
+    active_connections.add(websocket)
+
+    connection_stats[client_id] = {
+        'connected_at': datetime.now(),
+        'messages_sent': 0,
+        'last_error': None
+    }
+
+    server_logger.info(f"New WebSocket connection: {client_id}")
+
+    # Создаем отдельный экземпляр провайдера для каждого соединения
+    provider = await ProviderFactory.create_from_config()
+    if not provider:
+        server_logger.error(f"Failed to create provider for client {client_id}")
+        await cleanup_connection(websocket)
+        return
+
+    async def send_data(data: Any):
+        """Callback функция для отправки данных через websocket"""
+        try:
+            await websocket.send_json(data)
+            connection_stats[client_id]['messages_sent'] += 1
+        except Exception as e:
+            server_logger.error(f"Error sending data to client {client_id}: {str(e)}", exc_info=True)  # добавляем exc_info=True
+            raise
+
     try:
-        await websocket.accept()
-        server_logger.info(f"New WebSocket connection: {client_id}")
-        
+        # Запускаем провайдер с функцией отправки данных
+        await provider.start(send_data)
+        # Ждем пока соединение не закроется
         while True:
             try:
-                if provider:
-                    data = await provider.generate_data()
-                    if data:  # Проверяем, что данные существуют
-                        server_logger.debug(f"Sending data: {data}")  # Добавляем логирование
-                        await websocket.send_json(data)
-                await asyncio.sleep(1.0 / 100)  # 100 Hz
-            except Exception as e:
-                server_logger.error(f"WebSocket error for client {client_id}: {str(e)}")
+                # Просто проверяем что соединение живо
+                data = await websocket.receive_text()
+            except WebSocketDisconnect:
                 break
-
     except Exception as e:
-        server_logger.error(f"Error handling WebSocket connection {client_id}: {str(e)}")
-        
+        server_logger.error(f"Error in WebSocket connection {client_id}: {str(e)}", exc_info=True)
     finally:
-        server_logger.info(f"WebSocket connection closed: {client_id}")
+        await provider.stop()
+        await cleanup_connection(websocket)
+
+
+app.mount("/css", StaticFiles(directory="public/css"), name="css")
+app.mount("/js", StaticFiles(directory="public/js"), name="js")
+
+@app.get("/")
+async def get_index():
+    '''Отдача главной страницы'''
+    file_path = "public/index.html"
+    server_logger.info(f"Serving index page from {os.path.abspath(file_path)}")
+    if not os.path.exists(file_path):
+        server_logger.error(f"File not found: {file_path}")
+        return {"error": "Index file not found"}
+    return FileResponse(file_path)
+
+async def cleanup_connection(websocket: WebSocket):
+    '''Очистка при отключении клиента'''
+    if websocket in active_connections:
+        active_connections.remove(websocket)
+        client_id = str(id(websocket))
+        if client_id in connection_stats:
+            stats = connection_stats[client_id]
+            duration = (datetime.now() - stats['connected_at']).total_seconds()
+            server_logger.info(
+                f"Client {client_id} disconnected. "
+                f"Connection duration: {duration:.2f}s, "
+                f"Messages sent: {stats['messages_sent']}"
+            )
+            del connection_stats[client_id]
+
+@app.get("/status")
+async def get_status():
+    '''    Получение статуса сервера и соединений     '''
+    return {
+        "active_connections": len(active_connections),
+        "provider_status": "running" if active_connections else "stopped",
+        "connection_stats": connection_stats
+    }

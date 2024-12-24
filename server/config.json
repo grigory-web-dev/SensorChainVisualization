@@ -5,7 +5,7 @@
         "reload": true
     },
     "provider": {
-        "default": "simulation_provider",
+        "default": "spacedata_provider",
         "scan_path": "providers"
     },
     "logging": {
